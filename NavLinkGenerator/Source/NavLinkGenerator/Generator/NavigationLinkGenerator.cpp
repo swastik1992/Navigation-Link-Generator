@@ -7,6 +7,7 @@
 #include "Kismet/KismetSystemLibrary.h"
 #include "DrawDebugHelpers.h"
 #include "TimerManager.h"
+#include "NavLinkModifier.h"
 
 ANavigationLinkGenerator::ANavigationLinkGenerator()
 {
@@ -62,8 +63,11 @@ void ANavigationLinkGenerator::GenerateNavLinks()
 		}
 	}
 	_navLinks.Empty(0);
+	_foundNavModifier.Empty(0);
 
 	_bHasFinishedGeneration = false;
+
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), ANavLinkModifier::StaticClass(), _foundNavModifier);
 
 	TArray<FVector>& navMeshEdges = navMeshGeometry.NavMeshEdges;
 
@@ -104,6 +108,31 @@ void ANavigationLinkGenerator::GenerateNavLinks()
 
 void ANavigationLinkGenerator::CheckPointForLink(const FVector& inPoint, const FVector& inDirection, TArray<ANavLinkProxy*>& inNavLinks, UWorld* inWorld)
 {
+	ENavLinkModifierVolumeTypeB directionModifier = ENavLinkModifierVolumeTypeB::BothDirection;
+	ENavLinkModifierVolumeTypeC marginModifier = ENavLinkModifierVolumeTypeC::DefaultMargin;
+
+	for (int32 i = 0; i < _foundNavModifier.Num(); ++i)
+	{
+		if (ANavLinkModifier* navModifier = Cast<ANavLinkModifier>(_foundNavModifier[i]))
+		{
+			UBoxComponent* boxComp = navModifier->boxComponent;
+
+			const FVector boxLocation = boxComp->GetComponentLocation();
+			const FVector boxExtends = boxComp->GetScaledBoxExtent();
+
+			FBox box = FBox::BuildAABB(boxLocation, boxExtends);
+
+			if (box.IsInsideOrOn(inPoint))
+			{
+				if (navModifier->linkExistModifier == ENavLinkModifierVolumeTypeA::NoLinks) return;
+				
+				directionModifier = navModifier->directionModifier;
+				marginModifier = navModifier->marginModifier;
+
+			}
+		}
+	}
+
 	//Find the forward and backward trace direction.
 	FVector traceDirection = FVector(inDirection.Y, -inDirection.X, 0);
 	traceDirection.Normalize();
@@ -112,13 +141,13 @@ void ANavigationLinkGenerator::CheckPointForLink(const FVector& inPoint, const F
 	const FVector traceVectorBackward = -traceDirection * _traceLength;
 
 	//Check which trace direction is correct.
-	if (!FindAndAddNavLinks(inPoint, inDirection, traceVectorForward, inNavLinks, inWorld))
+	if (!FindAndAddNavLinks(inPoint, inDirection, traceVectorForward, inNavLinks, directionModifier, marginModifier, inWorld))
 	{
-		FindAndAddNavLinks(inPoint, -inDirection, traceVectorBackward, inNavLinks, inWorld);
+		FindAndAddNavLinks(inPoint, -inDirection, traceVectorBackward, inNavLinks, directionModifier, marginModifier, inWorld);
 	}
 }
 
-bool ANavigationLinkGenerator::FindAndAddNavLinks(const FVector& inPoint, const FVector& inDirection, const FVector& inTraceVector, TArray<ANavLinkProxy*>& inNavLinks, UWorld* inWorld)
+bool ANavigationLinkGenerator::FindAndAddNavLinks(const FVector& inPoint, const FVector& inDirection, const FVector& inTraceVector, TArray<ANavLinkProxy*>& inNavLinks, ENavLinkModifierVolumeTypeB directionModifier, ENavLinkModifierVolumeTypeC marginModifier, UWorld* inWorld)
 {
 	FHitResult hitResult;
 	FCollisionQueryParams params;
@@ -208,6 +237,16 @@ bool ANavigationLinkGenerator::FindAndAddNavLinks(const FVector& inPoint, const 
 				link->PointLinks[0].Right = link->GetTransform().InverseTransformPosition(leftNavPoint.Location);
 
 				ENavLinkDirection::Type originalDirection = ENavLinkDirection::BothWays;
+
+				//Apply modifier direction changes.
+				if (directionModifier == ENavLinkModifierVolumeTypeB::LeftToRightLinks)
+				{
+					originalDirection = ENavLinkDirection::LeftToRight;
+				}
+				else if (directionModifier == ENavLinkModifierVolumeTypeB::RightToLeftLinks)
+				{
+					originalDirection = ENavLinkDirection::RightToLeft;
+				}
 
 				//Need to set up the smart links location as well, since it's manual
 				link->GetSmartLinkComp()->SetLinkData(link->PointLinks[0].Left, link->PointLinks[0].Right, originalDirection);

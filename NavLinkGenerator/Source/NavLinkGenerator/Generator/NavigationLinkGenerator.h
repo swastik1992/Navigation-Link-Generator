@@ -23,6 +23,8 @@ public:
 	*/
 	void GenerateNavLinks();
 
+private:
+
 	/**
 	* Helper function for GenerateNavLinks, which checks if a point is valid based on the line direction.
 	* @param inPoint: The segment point.
@@ -40,7 +42,7 @@ public:
 	* @param inNavLinks: Array to hold the final nav links.
 	* @param inWorld: Pointer to the world generator is in.
 	*/
-	bool FindAndAddNavLinks(const FVector& inPoint, const FVector& inDirection, const FVector& inTraceVector, TArray<ANavLinkProxy*>& inNavLinks, UWorld* inWorld);
+	bool FindAndAddNavLinks(const FVector& inPoint, const FVector& inDirection, const FVector& inTraceVector, TArray<ANavLinkProxy*>& inNavLinks, ENavLinkModifierVolumeTypeB directionModifier, ENavLinkModifierVolumeTypeC marginModifier, UWorld* inWorld);
 
 
 #if WITH_EDITOR
@@ -91,4 +93,6 @@ public:
 	UPROPERTY(Category = Default, EditAnywhere)
 	bool _bClearGenerator = false;
 
+	/** Reference of all the nav modifier found in current world. */
+	TArray<AActor*> _foundNavModifier;
 };
